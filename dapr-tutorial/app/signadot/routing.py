@@ -1,65 +1,64 @@
-"""
-Where the Signadot routing key lives, and how to carry it along.
-
-Signadot identifies sandbox traffic by an opaque *routing key*. On HTTP requests
-it travels in the W3C `baggage` header as `sd-routing-key=<key>` (and, as a
-fallback, in the `tracestate` header). Anything that forwards a request, or
-turns a request into a message, must carry it along so the next hop can route.
-
-Docs: https://www.signadot.com/docs/guides/set-up-context-propagation
-"""
-from typing import Mapping, Optional
-
-ROUTING_KEY = "sd-routing-key"
-
-# Headers Signadot routes on (baggage, tracestate), plus traceparent because
-# some libraries drop tracestate unless traceparent is present too.
-ROUTING_HEADERS = ("baggage", "tracestate", "traceparent")
+"""Validate opaque Signadot context and forward it without rewriting it."""
+from collections.abc import Mapping
+import re
 
 
-def routing_headers(headers: Mapping[str, str]) -> dict:
-    """Return the subset of `headers` that carries routing context.
-
-    A service attaches these to every outbound call it makes on behalf of an
-    inbound request, so the routing key survives the hop.
-    """
-    return {name: headers[name] for name in ROUTING_HEADERS if name in headers}
+class RoutingError(ValueError):
+    """No safe routing decision can be made from the supplied context."""
 
 
-def routing_key(headers: Mapping[str, Optional[str]]) -> Optional[str]:
-    """Extract the routing key from `baggage` (preferred) or `tracestate`.
+ROUTING_HEADERS = {"baggage", "tracestate", "traceparent"}
+# Only these can carry sd-routing-key, so only these can be *ambiguous* about it.
+# traceparent is forwarded but never parsed for a key, so a duplicated traceparent --
+# a misconfigured proxy, or two tracing agents -- must not fail the request. It used to,
+# and on a subscriber that meant a DROP: a healthy message dead-lettered.
+KEY_CARRIER_HEADERS = {"baggage", "tracestate"}
 
-    Returns None for baseline traffic (no key present).
-    """
+
+def routing_key(headers: Mapping[str, str]) -> str | None:
+    normalized = {}
+    for name, value in headers.items():
+        lower = name.lower()
+        # Only the carrier headers are inspected. A repeated Cookie,
+        # X-Forwarded-For or Via is ordinary in HTTP/2 and behind proxies, and
+        # must not fail a request whose routing context is unambiguous -- on a
+        # subscriber that rejection became a DROP, dead-lettering a good message.
+        if lower not in KEY_CARRIER_HEADERS:
+            continue
+        if lower in normalized:
+            raise RoutingError("duplicate case-insensitive routing header")
+        if not isinstance(value, str) or re.search(r"[\x00-\x1f\x7f]", value):
+            raise RoutingError("invalid HTTP header value")
+        normalized[lower] = value
+    found = []
     for name in ("baggage", "tracestate"):
-        value = headers.get(name)
-        if value:
-            key = _list_member(value, ROUTING_KEY)
-            if key:
-                return key
-    return None
+        members = []
+        for item in normalized.get(name, "").split(","):
+            head = item.split(";", 1)[0].strip() if name == "baggage" else item.strip()
+            key, separator, value = head.partition("=")
+            if key.strip() != "sd-routing-key":
+                continue
+            value = value.strip()
+            if not separator or not value or len(value) > 4096 or re.search(r"[\s;,\x00-\x1f\x7f]", value):
+                raise RoutingError("invalid sd-routing-key")
+            members.append(value)
+        if len(members) > 1:
+            raise RoutingError("multiple routing keys in one header")
+        found.extend(members)
+    if len(set(found)) > 1:
+        raise RoutingError("baggage and tracestate disagree on routing key")
+    return found[0] if found else None
 
 
-def routing_key_from_event(event: Mapping, headers: Mapping[str, str]) -> Optional[str]:
-    """Extract the routing key from a CloudEvent delivered by Dapr.
-
-    `checkout` copies the inbound `baggage` header into the CloudEvent as an
-    extension attribute of the same name, so the key rides inside the message
-    regardless of the broker. Two fallbacks: Dapr copies the publisher's
-    `tracestate` into the envelope when Dapr tracing is enabled, and the Kafka
-    component delivers record headers as HTTP headers.
-    """
-    from_envelope = {"baggage": event.get("baggage"), "tracestate": event.get("tracestate")}
-    return routing_key(from_envelope) or routing_key(headers)
+def routing_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    routing_key(headers)
+    # In particular, never forward dapr-app-id: it overrides the native URL ID.
+    return {name.lower(): value for name, value in headers.items() if name.lower() in ROUTING_HEADERS}
 
 
-def _list_member(header_value: str, name: str) -> Optional[str]:
-    """Find `name=value` in a comma-separated list header (baggage, tracestate).
-
-    Baggage members may carry `;property` suffixes, which are dropped.
-    """
-    for member in header_value.split(","):
-        key, _, value = member.strip().partition("=")
-        if key.strip() == name:
-            return value.split(";", 1)[0].strip() or None
-    return None
+def routing_key_from_event(event: Mapping, headers: Mapping[str, str]) -> str | None:
+    envelope = {name: event[name] for name in ROUTING_HEADERS if name in event}
+    event_key, header_key = routing_key(envelope), routing_key(headers)
+    if event_key is not None and header_key is not None and event_key != header_key:
+        raise RoutingError("CloudEvent and delivery headers disagree on routing key")
+    return event_key if event_key is not None else header_key

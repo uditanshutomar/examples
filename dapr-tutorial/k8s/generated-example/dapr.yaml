@@ -1,0 +1,55 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: pubsub
+  namespace: dapr-demo
+scopes:
+- frontend
+- checkout
+- order-processor
+- dapr-demo-frontend
+- dapr-demo-checkout
+- dapr-demo-processor
+spec:
+  metadata:
+  - name: redisHost
+    value: redis:6379
+  - name: redisPassword
+    value: ''
+  - name: consumerID
+    value: '{appID}'
+  - name: processingTimeout
+    value: 10s
+  - name: redeliverInterval
+    value: 1s
+  type: pubsub.redis
+  version: v1
+---
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: pubsub-retries
+  namespace: dapr-demo
+scopes:
+- frontend
+- checkout
+- order-processor
+- dapr-demo-frontend
+- dapr-demo-checkout
+- dapr-demo-processor
+spec:
+  policies:
+    retries:
+      inbound:
+        duration: 1s
+        maxRetries: 3
+        policy: constant
+  targets:
+    components:
+      pubsub:
+        inbound:
+          retry: inbound

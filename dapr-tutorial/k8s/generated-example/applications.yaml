@@ -1,0 +1,302 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: frontend
+  namespace: dapr-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      annotations:
+        dapr.io/app-id: frontend
+        dapr.io/app-port: '8080'
+        dapr.io/enabled: 'true'
+        dapr.io/sidecar-svc-annotations: routing.signadot.com/ignore=true
+        sidecar.signadot.com/inject: 'true'
+      labels:
+        app: frontend
+        tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+    spec:
+      containers:
+      - command:
+        - uvicorn
+        - frontend.main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        env:
+        - name: TUTORIAL_CONFIG
+          value: /etc/tutorial/config.json
+        - name: BASELINE_NAME
+          value: frontend
+        - name: BASELINE_NAMESPACE
+          value: dapr-demo
+        - name: FRONTEND_BASELINE_NAME
+          value: frontend
+        - name: CHECKOUT_BASELINE_NAME
+          value: checkout
+        - name: PROCESSOR_BASELINE_NAME
+          value: order-processor
+        - name: REDIS_URL
+          value: redis://redis:6379/0
+        - name: PUBSUB_NAME
+          value: pubsub
+        - name: ORDERS_TOPIC
+          value: orders
+        - name: DISCOUNT_PERCENT
+          value: '0'
+        - name: FULFILLMENT_MODE
+          value: standard
+        - name: CONSOLE_VARIANT
+          value: baseline
+        - name: DAPR_APP_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['dapr.io/app-id']
+        image: dapr-signadot-tutorial:local
+        imagePullPolicy: IfNotPresent
+        name: app
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 10
+        volumeMounts:
+        - mountPath: /etc/tutorial
+          name: tutorial-config
+          readOnly: true
+      serviceAccountName: default
+      volumes:
+      - configMap:
+          name: tutorial-config
+        name: tutorial-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: frontend
+  namespace: dapr-demo
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: checkout
+  namespace: dapr-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      annotations:
+        dapr.io/app-id: checkout
+        dapr.io/app-port: '8080'
+        dapr.io/enabled: 'true'
+        dapr.io/sidecar-svc-annotations: routing.signadot.com/ignore=true
+        sidecar.signadot.com/inject: 'true'
+      labels:
+        app: checkout
+        tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+    spec:
+      containers:
+      - command:
+        - uvicorn
+        - checkout.main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        env:
+        - name: TUTORIAL_CONFIG
+          value: /etc/tutorial/config.json
+        - name: BASELINE_NAME
+          value: checkout
+        - name: BASELINE_NAMESPACE
+          value: dapr-demo
+        - name: FRONTEND_BASELINE_NAME
+          value: frontend
+        - name: CHECKOUT_BASELINE_NAME
+          value: checkout
+        - name: PROCESSOR_BASELINE_NAME
+          value: order-processor
+        - name: REDIS_URL
+          value: redis://redis:6379/0
+        - name: PUBSUB_NAME
+          value: pubsub
+        - name: ORDERS_TOPIC
+          value: orders
+        - name: DISCOUNT_PERCENT
+          value: '0'
+        - name: FULFILLMENT_MODE
+          value: standard
+        - name: CONSOLE_VARIANT
+          value: baseline
+        - name: DAPR_APP_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['dapr.io/app-id']
+        image: dapr-signadot-tutorial:local
+        imagePullPolicy: IfNotPresent
+        name: app
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 10
+        volumeMounts:
+        - mountPath: /etc/tutorial
+          name: tutorial-config
+          readOnly: true
+      serviceAccountName: default
+      volumes:
+      - configMap:
+          name: tutorial-config
+        name: tutorial-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: checkout
+  namespace: dapr-demo
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: dapr-internal
+    port: 50002
+    targetPort: 50002
+  selector:
+    app: checkout
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: order-processor
+  namespace: dapr-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-processor
+  template:
+    metadata:
+      annotations:
+        dapr.io/app-id: order-processor
+        dapr.io/app-port: '8080'
+        dapr.io/enabled: 'true'
+        dapr.io/sidecar-svc-annotations: routing.signadot.com/ignore=true
+        sidecar.signadot.com/inject: 'true'
+      labels:
+        app: order-processor
+        tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+    spec:
+      containers:
+      - command:
+        - uvicorn
+        - order_processor.main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        env:
+        - name: TUTORIAL_CONFIG
+          value: /etc/tutorial/config.json
+        - name: BASELINE_NAME
+          value: order-processor
+        - name: BASELINE_NAMESPACE
+          value: dapr-demo
+        - name: FRONTEND_BASELINE_NAME
+          value: frontend
+        - name: CHECKOUT_BASELINE_NAME
+          value: checkout
+        - name: PROCESSOR_BASELINE_NAME
+          value: order-processor
+        - name: REDIS_URL
+          value: redis://redis:6379/0
+        - name: PUBSUB_NAME
+          value: pubsub
+        - name: ORDERS_TOPIC
+          value: orders
+        - name: DISCOUNT_PERCENT
+          value: '0'
+        - name: FULFILLMENT_MODE
+          value: standard
+        - name: CONSOLE_VARIANT
+          value: baseline
+        - name: DAPR_APP_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['dapr.io/app-id']
+        image: dapr-signadot-tutorial:local
+        imagePullPolicy: IfNotPresent
+        name: app
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 10
+        volumeMounts:
+        - mountPath: /etc/tutorial
+          name: tutorial-config
+          readOnly: true
+      serviceAccountName: default
+      volumes:
+      - configMap:
+          name: tutorial-config
+        name: tutorial-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    tutorial.signadot.com/owner: 28e6d409-be1e-48a7-b636-7c29f750aee2
+  name: order-processor
+  namespace: dapr-demo
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: dapr-internal
+    port: 50002
+    targetPort: 50002
+  selector:
+    app: order-processor
