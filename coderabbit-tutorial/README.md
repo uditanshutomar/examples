@@ -85,6 +85,16 @@ minutes (`jobTimeout` in `runner.yaml`), and the workflow job after 40 minutes, 
 startup and time in the queue. The CLI checks `--timeout 25m` only between polls, so it won't stop a
 log stream that is already running.
 
+## Sharing a HotROD install with other tutorials
+
+Other Signadot tutorials run against the same HotROD baseline. This one changes it in exactly one
+place: the `driver` Deployment gains an `imagePullSecrets` entry so sandboxes can pull your image,
+which restarts its pods once. Cleanup removes that entry by name and leaves any others alone.
+
+Everything else it creates is its own: the Job Runner Group you name, the `hotrod-git-read` Secret,
+and sandboxes named from your repository and pull request. Job Runner Groups coexist in one
+namespace, and cleanup keeps `signadot-tests` and anything else in it.
+
 ## Cleanup
 
 The tutorial's cleanup section closes the pull requests and removes the Job Runner Group and credentials
