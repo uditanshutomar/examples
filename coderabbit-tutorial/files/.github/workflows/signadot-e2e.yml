@@ -23,7 +23,9 @@ env:
 
 jobs:
   build:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -44,7 +46,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - name: Build frontend assets, test, and compile HotROD
+          cache: yarn
+          cache-dependency-path: services/frontend/react_app/yarn.lock
+      - name: Test and build HotROD
         run: bash .signadot/scripts/build.sh
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -79,7 +83,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - run: bash .signadot/scripts/ci-inputs.sh >> "$GITHUB_ENV"
+      - name: Validate inputs and derive names
+        run: bash .signadot/scripts/ci-inputs.sh >> "$GITHUB_ENV"
       - name: Install the Signadot CLI
         env:
           SIGNADOT_CLI_VERSION: v1.8.0
@@ -111,7 +116,7 @@ jobs:
             --set sandbox="$SANDBOX" --attach --timeout 25m 2>&1 | tee signadot-job.log
           cli_exit=${PIPESTATUS[0]}
           set -e
-          # The pinned CLI returns zero for cancellation; require API success.
+          # A canceled Job still exits 0, so the phase from the API decides.
           job=$(sed -nE 's/^Job (hotrod-cr-e2e-[a-z0-9]+) .*/\1/p' signadot-job.log | head -n 1)
           test -n "$job"
           signadot job get "$job" -o json > signadot-job.json

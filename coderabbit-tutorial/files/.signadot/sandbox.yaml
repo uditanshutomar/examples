@@ -1,6 +1,6 @@
 name: "@{name}"
 spec:
-  description: "Driver preview for PR @{pr}"
+  description: "Driver sandbox for PR @{pr}"
   cluster: "@{cluster}"
   labels:
     signadot/github-repo: "@{repo}"

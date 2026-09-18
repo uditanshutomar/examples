@@ -30,6 +30,11 @@ spec:
     test_exit=${PIPESTATUS[0]}
     set -e
 
+    # Playwright records traces and videos under test-results; keep them.
+    if [ -d test-results ]; then
+      tar czf playwright-traces.tgz test-results || true
+    fi
+
     # Keep assertion details at the end, after setup output.
     printf '\n--- Playwright result (last 40 KB, up to 100 lines) ---\n'
     tail -c 40000 playwright.log | tail -n 100
@@ -41,3 +46,4 @@ spec:
     sandbox: "@{sandbox}"
   uploadArtifact:
     - path: hotrod/playwright.log
+    - path: hotrod/playwright-traces.tgz
